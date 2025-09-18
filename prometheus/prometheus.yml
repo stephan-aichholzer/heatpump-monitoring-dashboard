@@ -1,0 +1,8 @@
+global:
+  scrape_interval: 30s
+
+scrape_configs:
+  - job_name: 'wago'
+    static_configs:
+      - targets: ['modbus_exporter:9100']
+
