@@ -4,6 +4,8 @@
 
 This project implements a comprehensive energy monitoring solution for a 3-phase electrical installation using a WAGO energy meter connected through a Waveshare RS485 Modbus Gateway. The entire monitoring stack runs on a Raspberry Pi host system using Docker containers.
 
+**Current Version: v2.0** - Enhanced with frequency monitoring, power factor tracking, and professional heat pump dashboard with real-time KPIs.
+
 ## Physical Architecture
 
 ```
@@ -121,10 +123,22 @@ WAGO Meter → RS485 → Waveshare Gateway → Network → Raspberry Pi → Modb
 | L1 Power | `0x5014` | L1 phase active power (kW) |
 | L2 Power | `0x5016` | L2 phase active power (kW) |
 | L3 Power | `0x5018` | L3 phase active power (kW) |
+| **Frequency** ✨ | `0x5008` | **Grid frequency (Hz)** |
+| **Power Factor** ✨ | `0x502A` | **Power factor (Cos φ)** |
 | Total Energy | `0x6000` | Total active energy (kWh) |
 | L1 Energy | `0x6006` | L1 phase active energy (kWh) |
 | L2 Energy | `0x6008` | L2 phase active energy (kWh) |
 | L3 Energy | `0x600A` | L3 phase active energy (kWh) |
+
+✨ *New in v2.0* - Enhanced grid quality monitoring for heat pump systems
+
+**Prometheus Metrics Exposed**:
+- `wago_power_total_kw` - Total active power (kW)
+- `wago_power_L1_kw`, `wago_power_L2_kw`, `wago_power_L3_kw` - Per-phase power (kW)
+- `wago_energy_total_kwh` - Total cumulative energy (kWh)
+- `wago_energy_L1_kwh`, `wago_energy_L2_kwh`, `wago_energy_L3_kwh` - Per-phase energy (kWh)
+- **`wago_frequency_hz`** ✨ - Grid frequency (Hz)
+- **`wago_power_factor`** ✨ - Power factor (Cos φ)
 
 ### 2. Prometheus Container
 
@@ -150,9 +164,13 @@ WAGO Meter → RS485 → Waveshare Gateway → Network → Raspberry Pi → Modb
 
 **Features**:
 - Web interface: `http://raspberry-pi-ip:3000`
-- Real-time power consumption visualization
-- Historical energy usage trends
-- Per-phase electrical analysis
+- **Professional heat pump dashboard** ✨ (`dashboards/heat_pump_dashboard.json`)
+- **Real-time KPIs**: Current power, frequency, power factor, daily energy
+- **Live monitoring**: 6W standby / 46W active power detection
+- **Grid quality**: Frequency stability and power factor trends
+- **Color-coded alerts**: Heat pump optimized thresholds (0-1-2kW)
+- Historical energy usage trends with phase analysis
+- Standard electrical colors (L1=Red, L2=Yellow, L3=Blue)
 
 ## Network Configuration
 
@@ -228,6 +246,45 @@ docker run --rm -v modbus_prometheus_data:/data -v $(pwd):/backup alpine tar czf
 # Backup Grafana data
 docker run --rm -v modbus_grafana_data:/data -v $(pwd):/backup alpine tar czf /backup/grafana_backup.tar.gz -C /data .
 ```
+
+## Heat Pump Monitoring Features ✨ *v2.0*
+
+### Dashboard Overview
+The enhanced dashboard provides comprehensive heat pump monitoring with professional-grade insights:
+
+**Top Row - Live KPIs:**
+- **Current Power**: Real-time consumption with color coding (6W standby / 46W active)
+- **Grid Frequency**: Stability monitoring (49.8-50.2 Hz green zone)
+- **Power Factor**: Heat pump efficiency indicator (Cos φ)
+- **Today's Energy**: Daily consumption tracking
+
+**Main Visualization Panels:**
+- **Power Consumption**: Time series with L1/L2/L3 breakdown
+- **Cumulative Energy**: Total kWh consumption over time
+- **Daily Energy per Phase**: Bar chart showing load distribution
+- **Grid Quality**: Frequency and power factor trends
+
+### Heat Pump Specific Monitoring
+
+**Power Consumption Patterns:**
+- **6W**: Standby mode (control electronics, sensors)
+- **46W**: Active operation (40W circulation pump + 6W base load)
+- **>2kW**: High load operation or defrost cycles
+
+**Grid Quality Indicators:**
+- **Frequency Monitoring**: Detects grid instability affecting heat pump operation
+- **Power Factor Tracking**: Monitors system efficiency and electrical health
+- **Phase Balance**: Ensures proper 3-phase load distribution
+
+**Color-Coded Thresholds:**
+- 🟢 **Green**: Normal operation (0-1kW, 49.8-50.2Hz, PF>0.85)
+- 🟡 **Yellow**: Moderate load (1-2kW, frequency ±0.3Hz, PF 0.7-0.85)
+- 🔴 **Red**: High load/alert (>2kW, frequency ±0.5Hz, PF<0.7)
+
+### Dashboard Location
+The production dashboard is available at: `dashboards/heat_pump_dashboard.json`
+
+Import this file into Grafana for complete heat pump monitoring with optimized thresholds and professional visualization.
 
 ## Troubleshooting
 
