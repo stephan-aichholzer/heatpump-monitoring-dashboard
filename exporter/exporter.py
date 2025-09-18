@@ -18,6 +18,9 @@ power_l1_kw = Gauge("wago_power_L1_kw", "L1 active power (kW)")
 power_l2_kw = Gauge("wago_power_L2_kw", "L2 active power (kW)")
 power_l3_kw = Gauge("wago_power_L3_kw", "L3 active power (kW)")
 
+frequency_hz = Gauge("wago_frequency_hz", "Grid frequency (Hz)")
+power_factor = Gauge("wago_power_factor", "Power factor (Cos φ)")
+
 # Modbus config
 MODBUS_IP = "192.168.2.10"
 MODBUS_PORT = 8899
@@ -49,6 +52,9 @@ async def poll_loop():
             power_l1 = await read_float32(client, 0x5014)
             power_l2 = await read_float32(client, 0x5016)
             power_l3 = await read_float32(client, 0x5018)
+
+            frequency = await read_float32(client, 0x5008)
+            pf = await read_float32(client, 0x502A)
             
             if power is not None:
                 power_kw.set(power)
@@ -73,6 +79,12 @@ async def poll_loop():
 
             if energy_l3 is not None:
                 energy_l3_kwh.set(energy_l3)
+
+            if frequency is not None:
+                frequency_hz.set(frequency)
+
+            if pf is not None:
+                power_factor.set(pf)
 
             await asyncio.sleep(POLL_INTERVAL_SECONDS)
 
