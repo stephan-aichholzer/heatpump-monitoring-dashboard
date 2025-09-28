@@ -9,6 +9,7 @@ A comprehensive energy monitoring solution for heat pump systems using WAGO ener
 - **Energy Tracking** - Cumulative and daily energy consumption per phase
 - **Grid Quality** - Frequency stability and power factor monitoring
 - **Heat Pump Optimization** - Small heat pump optimized thresholds (0-1-2kW)
+- **Temperature Sensors** ✨ *New in v2.1* - Integrated IoT temperature and humidity monitoring
 
 ### Professional Dashboard
 - **Live KPIs** - Current power, frequency, power factor, daily energy
@@ -38,6 +39,7 @@ A comprehensive energy monitoring solution for heat pump systems using WAGO ener
 ### Network Configuration
 - **Modbus Gateway**: Must be accessible at `192.168.2.10:8899`
 - **Slave ID**: WAGO device configured as slave ID `2`
+- **Temperature Sensors**: Optional IoT temperature API at `192.168.2.11:8001`
 
 ## 🔧 Installation
 
@@ -65,11 +67,14 @@ docker-compose up -d
 # Check all services are running
 docker-compose ps
 
-# Verify metrics collection
+# Verify WAGO metrics collection
 curl http://localhost:9100/metrics | grep wago
 
-# Check for new metrics
+# Check for new grid quality metrics
 curl http://localhost:9100/metrics | grep -E "frequency|power_factor"
+
+# Verify temperature sensor integration (if available)
+curl http://localhost:9090/api/v1/query?query=sensor_temperature_celsius
 ```
 
 ## 📊 Dashboard Setup
@@ -116,6 +121,14 @@ Open your browser to: `http://localhost:3000`
 |--------|-------------|------|---------|
 | `wago_frequency_hz` | Grid frequency | Hz | 49.98 |
 | `wago_power_factor` | Power factor (Cos φ) | ratio | 0.240 |
+
+### Temperature Sensor Metrics ✨ *New in v2.1*
+| Metric | Description | Unit | Example |
+|--------|-------------|------|---------|
+| `sensor_temperature_celsius` | Temperature readings | °C | 22.5 |
+| `sensor_humidity_percent` | Humidity readings | % | 45.2 |
+| `sensor_battery_percent` | Battery level | % | 85 |
+| `sensor_last_seen_timestamp` | Last sensor update | timestamp | 1759050278 |
 
 ## 🎯 Heat Pump Monitoring
 
@@ -212,7 +225,14 @@ docker-compose up -d
 
 ## 🏷 Version History
 
-### v2.0 (Current)
+### v2.1 (Current)
+- ✅ Integrated IoT temperature sensor monitoring
+- ✅ Added Docker network configuration for external sensors
+- ✅ Temperature, humidity, and battery metrics support
+- ✅ Prometheus scraping of external APIs
+- ✅ Enhanced monitoring ecosystem
+
+### v2.0
 - ✅ Added frequency monitoring (WAGO register 0x5008)
 - ✅ Added power factor monitoring (WAGO register 0x502A)
 - ✅ Enhanced dashboard with real-time KPIs

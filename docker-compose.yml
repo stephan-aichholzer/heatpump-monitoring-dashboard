@@ -19,6 +19,9 @@ services:
       - prometheus_data:/prometheus
     ports:
       - "9090:9090"
+    networks:
+      - default
+      - shelly_bt_temp_default
     restart: unless-stopped
 
   grafana:
@@ -27,9 +30,16 @@ services:
       - grafana_data:/var/lib/grafana
     ports:
       - "3000:3000"
+    networks:
+      - default
+      - shelly_bt_temp_default
     restart: unless-stopped
 
 volumes:
   prometheus_data:
   grafana_data:
+
+networks:
+  shelly_bt_temp_default:
+    external: true
 
