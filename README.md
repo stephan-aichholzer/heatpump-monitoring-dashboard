@@ -173,11 +173,28 @@ curl http://localhost:9100/metrics | head -20
 curl http://localhost:9100/metrics | grep -E "wago_(frequency|power_factor)"
 ```
 
+### Temperature Sensor Issues ✨ *New in v2.1*
+```bash
+# Check temperature sensor API is responding
+curl http://192.168.2.11:8001/api/v1/sensors
+
+# Verify latest temperature readings
+curl http://192.168.2.11:8001/api/v1/temperature?limit=3
+
+# Check metrics endpoint synchronization
+curl http://192.168.2.11:8001/metrics | grep sensor_temperature
+
+# Verify Prometheus is scraping temperature sensors
+curl http://localhost:9090/api/v1/query?query=sensor_temperature_celsius
+```
+
 ### Common Issues
 1. **No data in dashboard**: Check Prometheus is scraping metrics
 2. **Connection timeouts**: Verify Modbus gateway IP and port
 3. **Missing frequency/power factor**: Ensure WAGO supports registers 0x5008/0x502A
 4. **Wrong values**: Check WAGO slave ID configuration
+5. **Temperature data stuck**: Check metrics endpoint reflects latest API values
+6. **Container unhealthy**: Restart temperature sensor container with `docker restart iot-api`
 
 ## 📁 Project Structure
 
