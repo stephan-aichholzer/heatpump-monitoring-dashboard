@@ -12,3 +12,9 @@ scrape_configs:
     metrics_path: '/metrics'
     scrape_interval: 30s
 
+  - job_name: 'heatpump'
+    static_configs:
+      - targets: ['lg_r290_service:8000']
+    metrics_path: '/metrics'
+    scrape_interval: 30s
+

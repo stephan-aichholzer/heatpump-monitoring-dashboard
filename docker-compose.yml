@@ -40,6 +40,8 @@ volumes:
   grafana_data:
 
 networks:
+  default:
+    name: modbus_default
   shelly_bt_temp_default:
     external: true
 
