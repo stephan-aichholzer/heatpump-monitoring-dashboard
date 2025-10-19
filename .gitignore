@@ -56,3 +56,16 @@ prometheus_data/
 
 # Grafana data
 grafana_data/
+
+# Backups
+*.tar.gz
+backup_*.tar.gz
+
+# Temporary files
+*.tmp
+*.bak
+*~
+
+# Claude/AI assistant notes (use git commits or issues instead)
+CLAUDE.md
+claude_*.txt
