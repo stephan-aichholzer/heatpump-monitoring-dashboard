@@ -9,7 +9,8 @@ A comprehensive energy monitoring solution for heat pump systems using WAGO ener
 - **Energy Tracking** - Cumulative and daily energy consumption per phase
 - **Grid Quality** - Frequency stability and power factor monitoring
 - **Heat Pump Optimization** - Small heat pump optimized thresholds (0-1-2kW)
-- **Temperature Sensors** ✨ *New in v2.1* - Integrated IoT temperature and humidity monitoring
+- **Data Quality** ✨ *New in v2.2* - Power spike filtering and monotonic energy counter protection
+- **External Sensors** - Integrated IoT temperature sensors and heat pump metrics via Docker networking
 
 ### Professional Dashboard
 - **Live KPIs** - Current power, frequency, power factor, daily energy
@@ -39,7 +40,10 @@ A comprehensive energy monitoring solution for heat pump systems using WAGO ener
 ### Network Configuration
 - **Modbus Gateway**: Must be accessible at `192.168.2.10:8899`
 - **Slave ID**: WAGO device configured as slave ID `2`
-- **Temperature Sensors**: Optional IoT temperature API at `192.168.2.11:8001`
+- **External Sensors** (Optional): IoT temperature API and heat pump service via Docker network
+  - Requires external Docker network: `shelly_bt_temp_default`
+  - Temperature sensors: `iot-api:8000`
+  - Heat pump metrics: `lg_r290_service:8000`
 
 ## 🔧 Installation
 
@@ -195,6 +199,8 @@ curl http://localhost:9090/api/v1/query?query=sensor_temperature_celsius
 4. **Wrong values**: Check WAGO slave ID configuration
 5. **Temperature data stuck**: Check metrics endpoint reflects latest API values
 6. **Container unhealthy**: Restart temperature sensor container with `docker restart iot-api`
+7. **Power spikes/garbage values**: v2.2+ includes automatic spike filtering (requires 2 consecutive low readings)
+8. **Energy counter resets**: v2.2+ includes monotonic counter protection to prevent backward jumps
 
 ## 📁 Project Structure
 
@@ -203,11 +209,13 @@ curl http://localhost:9090/api/v1/query?query=sensor_temperature_celsius
 ├── docker-compose.yml              # Service orchestration
 ├── exporter/                       # Modbus data collector
 │   ├── Dockerfile                  # Container definition
-│   └── exporter.py                 # Main collection script
+│   └── exporter.py                 # Main collection script (with spike filtering)
 ├── prometheus/                     # Time series database
-│   └── prometheus.yml              # Scraping configuration
+│   ├── prometheus.yml              # Scraping configuration
+│   └── wago_recording_rules.yml    # Recording rules for aggregation
 ├── dashboards/                     # Grafana dashboards
 │   └── heat_pump_dashboard.json    # Main dashboard
+├── backup.sh                       # Automated backup script
 ├── ARCHITECTURE.md                 # Technical architecture
 └── README.md                       # This file
 ```
@@ -220,14 +228,30 @@ WAGO Energy Meter → RS485 → Waveshare Gateway → TCP/IP → Modbus Exporter
 
 ## 📦 Backup & Maintenance
 
-### Backup Data
+### Automated Backup ✨ *New in v2.2*
 ```bash
-# Backup Prometheus data
-docker run --rm -v wago-energy-modbus-dashboard_prometheus_data:/data \
+# Run comprehensive backup (includes Git repo, Docker volumes, Grafana dashboards)
+./backup.sh
+
+# Or specify custom filename
+./backup.sh --output my_backup_2025.tar.gz
+
+# Backup includes:
+# - Git repository with current branch and uncommitted changes
+# - Prometheus data volume
+# - Grafana data volume
+# - Grafana dashboards exported via API
+# - Backup metadata with timestamps
+```
+
+### Manual Backup (Legacy)
+```bash
+# Backup Prometheus data only
+docker run --rm -v modbus_prometheus_data:/data \
   -v $(pwd):/backup alpine tar czf /backup/prometheus_backup.tar.gz -C /data .
 
-# Backup Grafana data
-docker run --rm -v wago-energy-modbus-dashboard_grafana_data:/data \
+# Backup Grafana data only
+docker run --rm -v modbus_grafana_data:/data \
   -v $(pwd):/backup alpine tar czf /backup/grafana_backup.tar.gz -C /data .
 ```
 
@@ -242,7 +266,15 @@ docker-compose up -d
 
 ## 🏷 Version History
 
-### v2.1 (Current)
+### v2.2 (Current)
+- ✅ Power spike filtering to eliminate bus interference
+- ✅ Monotonic energy counter protection
+- ✅ Heat pump service integration (LG R290)
+- ✅ Prometheus recording rules for daily/monthly aggregation
+- ✅ Comprehensive automated backup script
+- ✅ Enhanced data quality and resilience
+
+### v2.1
 - ✅ Integrated IoT temperature sensor monitoring
 - ✅ Added Docker network configuration for external sensors
 - ✅ Temperature, humidity, and battery metrics support

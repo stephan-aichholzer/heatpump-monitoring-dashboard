@@ -4,7 +4,7 @@
 
 This project implements a comprehensive energy monitoring solution for a 3-phase electrical installation using a WAGO energy meter connected through a Waveshare RS485 Modbus Gateway. The entire monitoring stack runs on a Raspberry Pi host system using Docker containers.
 
-**Current Version: v2.0** - Enhanced with frequency monitoring, power factor tracking, and professional heat pump dashboard with real-time KPIs.
+**Current Version: v2.2** - Enhanced with power spike filtering, monotonic energy counter protection, heat pump integration, and automated backup capabilities.
 
 ## Physical Architecture
 
@@ -115,6 +115,9 @@ WAGO Meter → RS485 → Waveshare Gateway → Network → Raspberry Pi → Modb
 - 30-second polling interval
 - Error handling and logging
 - Prometheus metrics exposition on port 9100
+- **Power spike filtering** ✨ *v2.2* - Filters out bus interference and garbage values
+- **Monotonic energy counter** ✨ *v2.2* - Prevents backward energy counter jumps
+- **Connection resilience** ✨ *v2.2* - Automatic reconnection on connection loss
 
 **Monitored Registers**:
 | Metric | Register | Description |
@@ -151,7 +154,11 @@ WAGO Meter → RS485 → Waveshare Gateway → Network → Raspberry Pi → Modb
 
 **Configuration**:
 - Scrape interval: 30 seconds
-- Target: `modbus_exporter:9100` (internal Docker network)
+- Scrape targets:
+  - `modbus_exporter:9100` - WAGO energy meter metrics
+  - `iot-api:8000` - Temperature sensor metrics (external network)
+  - `lg_r290_service:8000` - Heat pump metrics (external network)
+- Recording rules: Daily and monthly energy consumption aggregation
 - Web interface: `http://raspberry-pi-ip:9090`
 
 ### 3. Grafana Container
@@ -239,6 +246,16 @@ All data is stored locally on the Raspberry Pi:
 - `/var/lib/docker/volumes/modbus_grafana_data/` - Dashboard configurations
 
 ### Backup Strategy
+
+**Automated Backup Script** ✨ *v2.2*
+```bash
+# Comprehensive backup including Git repo, volumes, and dashboards
+./backup.sh
+
+# Output: backup_YYYYMMDD_HHMMSS.tar.gz
+```
+
+**Manual Backup (Legacy)**
 ```bash
 # Backup Prometheus data
 docker run --rm -v modbus_prometheus_data:/data -v $(pwd):/backup alpine tar czf /backup/prometheus_backup.tar.gz -C /data .
@@ -246,6 +263,48 @@ docker run --rm -v modbus_prometheus_data:/data -v $(pwd):/backup alpine tar czf
 # Backup Grafana data
 docker run --rm -v modbus_grafana_data:/data -v $(pwd):/backup alpine tar czf /backup/grafana_backup.tar.gz -C /data .
 ```
+
+## Data Quality Features ✨ *v2.2*
+
+### Power Spike Filtering
+
+The exporter includes intelligent power value validation to filter out Modbus bus interference:
+
+**Strategy**:
+- Values < 1W (0.001 kW) are considered suspicious (e.g., `3.67e-27` from bus errors)
+- Single suspicious values are ignored (spike filtering)
+- Requires 2+ consecutive low readings to accept as real (system idle detection)
+
+**Implementation**:
+- Tracks last 3 power readings per metric (total, L1, L2, L3)
+- Validates each new reading against history
+- Logs warnings when rejecting garbage values
+- Maintains last valid value during transient spikes
+
+### Monotonic Energy Counter Protection
+
+Prevents backward energy counter jumps caused by meter resets or communication errors:
+
+**Strategy**:
+- Energy values must always increase (monotonic)
+- Rejects any reading lower than the last valid value
+- Logs warnings when detecting backward jumps
+- Maintains last valid energy value to ensure data continuity
+
+**Benefits**:
+- Accurate long-term energy consumption tracking
+- Prevents negative energy calculations in Grafana
+- Resilient to meter restarts and Modbus communication errors
+
+### Connection Resilience
+
+Automatic reconnection handling for Modbus TCP connectivity:
+
+**Features**:
+- Detects connection failures automatically
+- Attempts reconnection on next polling cycle
+- Maintains metric state during disconnections
+- Logs connection status changes
 
 ## Heat Pump Monitoring Features ✨ *v2.0*
 
