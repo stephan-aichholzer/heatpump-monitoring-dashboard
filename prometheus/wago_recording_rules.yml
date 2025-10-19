@@ -1,0 +1,17 @@
+groups:
+  - name: wago_monthly_aggregates
+    interval: 1h
+    rules:
+      - record: wago:energy_monthly_consumption
+        expr: |
+          (
+            last_over_time(wago_energy_total_kwh[1d] @ end()) -
+            last_over_time(wago_energy_total_kwh[1d] @ start())
+          )
+        labels:
+          period: "monthly"
+
+      - record: wago:energy_daily_consumption
+        expr: increase(wago_energy_total_kwh[1d])
+        labels:
+          period: "daily"
