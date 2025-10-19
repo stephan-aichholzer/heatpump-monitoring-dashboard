@@ -158,7 +158,6 @@ WAGO Meter → RS485 → Waveshare Gateway → Network → Raspberry Pi → Modb
   - `modbus_exporter:9100` - WAGO energy meter metrics
   - `iot-api:8000` - Temperature sensor metrics (external network)
   - `lg_r290_service:8000` - Heat pump metrics (external network)
-- Recording rules: Daily and monthly energy consumption aggregation
 - Web interface: `http://raspberry-pi-ip:9090`
 
 ### 3. Grafana Container

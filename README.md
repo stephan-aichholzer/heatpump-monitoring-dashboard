@@ -211,8 +211,7 @@ curl http://localhost:9090/api/v1/query?query=sensor_temperature_celsius
 │   ├── Dockerfile                  # Container definition
 │   └── exporter.py                 # Main collection script (with spike filtering)
 ├── prometheus/                     # Time series database
-│   ├── prometheus.yml              # Scraping configuration
-│   └── wago_recording_rules.yml    # Recording rules for aggregation
+│   └── prometheus.yml              # Scraping configuration
 ├── dashboards/                     # Grafana dashboards
 │   └── heat_pump_dashboard.json    # Main dashboard
 ├── backup.sh                       # Automated backup script
@@ -270,7 +269,6 @@ docker-compose up -d
 - ✅ Power spike filtering to eliminate bus interference
 - ✅ Monotonic energy counter protection
 - ✅ Heat pump service integration (LG R290)
-- ✅ Prometheus recording rules for daily/monthly aggregation
 - ✅ Comprehensive automated backup script
 - ✅ Enhanced data quality and resilience
 
