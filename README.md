@@ -302,7 +302,18 @@ docker-compose up -d
 
 ## 📄 License
 
-This project is open source. Feel free to use, modify, and distribute.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+### Third-Party Dependencies
+
+This project uses the following open source software:
+
+- **pymodbus** (v3.6.9) - BSD-3-Clause License
+- **prometheus_client** - Apache-2.0 License
+- **Prometheus** - Apache-2.0 License
+- **Grafana** - AGPL-3.0 License
+
+For detailed license information and attributions, see the [NOTICE](NOTICE) file.
 
 ## 🆘 Support
 
