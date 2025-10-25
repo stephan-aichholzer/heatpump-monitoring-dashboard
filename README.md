@@ -158,7 +158,7 @@ Open your browser to: `http://localhost:3000`
 docker-compose logs
 
 # Restart specific service
-docker-compose restart modbus_exporter
+docker-compose restart heatpump_dashboard_modbus_exporter
 
 # Check service status
 docker-compose ps
@@ -246,11 +246,11 @@ WAGO Energy Meter → RS485 → Waveshare Gateway → TCP/IP → Modbus Exporter
 ### Manual Backup (Legacy)
 ```bash
 # Backup Prometheus data only
-docker run --rm -v modbus_prometheus_data:/data \
+docker run --rm -v heatpump_dashboard_prometheus_data:/data \
   -v $(pwd):/backup alpine tar czf /backup/prometheus_backup.tar.gz -C /data .
 
 # Backup Grafana data only
-docker run --rm -v modbus_grafana_data:/data \
+docker run --rm -v heatpump_dashboard_grafana_data:/data \
   -v $(pwd):/backup alpine tar czf /backup/grafana_backup.tar.gz -C /data .
 ```
 

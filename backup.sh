@@ -16,7 +16,7 @@ NC='\033[0m' # No Color
 
 # Configuration
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_NAME="modbus"
+PROJECT_NAME="heatpump_dashboard"
 DOCKER_COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
 
 # Parse arguments
@@ -57,7 +57,7 @@ if [[ ! "$OUTPUT_FILE" = /* ]]; then
     OUTPUT_FILE="$(pwd)/$OUTPUT_FILE"
 fi
 
-echo -e "${GREEN}=== Modbus Monitoring Stack Backup ===${NC}"
+echo -e "${GREEN}=== Heat Pump Dashboard Backup ===${NC}"
 echo ""
 echo "Project directory: $SCRIPT_DIR"
 echo "Output file: $OUTPUT_FILE"
@@ -65,7 +65,7 @@ echo ""
 
 # Create temporary backup directory
 TEMP_DIR=$(mktemp -d)
-BACKUP_DIR="$TEMP_DIR/modbus_backup"
+BACKUP_DIR="$TEMP_DIR/heatpump_dashboard_backup"
 mkdir -p "$BACKUP_DIR"
 
 cleanup() {
@@ -198,7 +198,7 @@ fi
 # Step 4: Create final archive
 echo -e "${GREEN}[4/4] Creating final archive...${NC}"
 cd "$TEMP_DIR"
-tar czf "$OUTPUT_FILE" modbus_backup/
+tar czf "$OUTPUT_FILE" heatpump_dashboard_backup/
 
 FINAL_SIZE=$(du -sh "$OUTPUT_FILE" | cut -f1)
 

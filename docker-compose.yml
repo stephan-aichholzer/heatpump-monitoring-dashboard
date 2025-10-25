@@ -37,11 +37,15 @@ services:
 
 volumes:
   prometheus_data:
+    name: heatpump_dashboard_prometheus_data
+    external: true
   grafana_data:
+    name: heatpump_dashboard_grafana_data
+    external: true
 
 networks:
   default:
-    name: modbus_default
+    name: heatpump_dashboard_default
   shelly_bt_temp_default:
     external: true
 
