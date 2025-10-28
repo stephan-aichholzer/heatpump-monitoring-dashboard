@@ -10,7 +10,9 @@ A comprehensive energy monitoring solution for heat pump systems using WAGO ener
 - **Grid Quality** - Frequency stability and power factor monitoring
 - **Heat Pump Optimization** - Small heat pump optimized thresholds (0-1-2kW)
 - **Data Quality** ✨ *New in v2.2* - Power spike filtering and monotonic energy counter protection
-- **External Sensors** - Integrated IoT temperature sensors and heat pump metrics via Docker networking
+- **Multi-System Integration** ✨ *New in v2.1+* - Integrated monitoring across the complete heating ecosystem:
+  - [**LG R290 Heat Pump Control**](https://github.com/stephan-aichholzer/lg-r290-control) - Real-time heat pump status and control integration
+  - [**Shelly BLU Temperature Sensors**](https://github.com/stephan-aichholzer/shelly-blu-ht) - IoT temperature/humidity monitoring with thermostat control
 
 ### Professional Dashboard
 - **Live KPIs** - Current power, frequency, power factor, daily energy
@@ -40,10 +42,10 @@ A comprehensive energy monitoring solution for heat pump systems using WAGO ener
 ### Network Configuration
 - **Modbus Gateway**: Must be accessible at `192.168.2.10:8899`
 - **Slave ID**: WAGO device configured as slave ID `2`
-- **External Sensors** (Optional): IoT temperature API and heat pump service via Docker network
+- **External System Integration** (Optional): Complete heating ecosystem monitoring
   - Requires external Docker network: `shelly_bt_temp_default`
-  - Temperature sensors: `iot-api:8000`
-  - Heat pump metrics: `lg_r290_service:8000`
+  - **Temperature sensors**: `iot-api:8000` from [shelly-blu-ht](https://github.com/stephan-aichholzer/shelly-blu-ht)
+  - **Heat pump service**: `lg_r290_service:8000` from [lg-r290-control](https://github.com/stephan-aichholzer/lg-r290-control)
 
 ## 🔧 Installation
 
@@ -127,12 +129,32 @@ Open your browser to: `http://localhost:3000`
 | `wago_power_factor` | Power factor (Cos φ) | ratio | 0.240 |
 
 ### Temperature Sensor Metrics ✨ *New in v2.1*
+**Integration**: [shelly-blu-ht project](https://github.com/stephan-aichholzer/shelly-blu-ht) - Shelly BLU H&T sensors with thermostat control
+
 | Metric | Description | Unit | Example |
 |--------|-------------|------|---------|
 | `sensor_temperature_celsius` | Temperature readings | °C | 22.5 |
 | `sensor_humidity_percent` | Humidity readings | % | 45.2 |
 | `sensor_battery_percent` | Battery level | % | 85 |
 | `sensor_last_seen_timestamp` | Last sensor update | timestamp | 1759050278 |
+| `thermostat_switch_state` | Thermostat state (0=OFF, 1=ON) | boolean | 1 |
+| `thermostat_target_temperature_celsius` | Target temperature setpoint | °C | 22.0 |
+| `thermostat_current_temperature_celsius` | Current averaged temperature | °C | 21.5 |
+
+### Heat Pump Metrics ✨ *New in v2.2*
+**Integration**: [lg-r290-control project](https://github.com/stephan-aichholzer/lg-r290-control) - LG R290 7kW heat pump control via Modbus TCP
+
+| Metric | Description | Unit | Example |
+|--------|-------------|------|---------|
+| `heatpump_flow_temperature_celsius` | Flow temperature (water outlet) | °C | 35.2 |
+| `heatpump_return_temperature_celsius` | Return temperature (water inlet) | °C | 32.8 |
+| `heatpump_outdoor_temperature_celsius` | Outdoor air temperature | °C | 5.3 |
+| `heatpump_target_temperature_celsius` | Target temperature setpoint | °C | 40.0 |
+| `heatpump_power_state` | Power state (0=OFF, 1=ON) | boolean | 1 |
+| `heatpump_compressor_running` | Compressor running (0=OFF, 1=ON) | boolean | 1 |
+| `heatpump_water_pump_running` | Water pump running (0=OFF, 1=ON) | boolean | 1 |
+| `heatpump_operating_mode` | Operating mode (0=Standby, 1=Cooling, 2=Heating, 3=Auto) | enum | 3 |
+| `heatpump_temperature_delta_celsius` | Temperature delta (flow - return) | °C | 2.4 |
 
 ## 🎯 Heat Pump Monitoring
 
@@ -177,19 +199,19 @@ curl http://localhost:9100/metrics | head -20
 curl http://localhost:9100/metrics | grep -E "wago_(frequency|power_factor)"
 ```
 
-### Temperature Sensor Issues ✨ *New in v2.1*
+### External System Integration Issues ✨ *New in v2.1+*
 ```bash
-# Check temperature sensor API is responding
+# Check temperature sensor API (shelly-blu-ht project)
 curl http://192.168.2.11:8001/api/v1/sensors
-
-# Verify latest temperature readings
-curl http://192.168.2.11:8001/api/v1/temperature?limit=3
-
-# Check metrics endpoint synchronization
 curl http://192.168.2.11:8001/metrics | grep sensor_temperature
 
-# Verify Prometheus is scraping temperature sensors
+# Check heat pump service API (lg-r290-control project)
+curl http://192.168.2.11:8002/status
+curl http://192.168.2.11:8002/metrics | grep heatpump
+
+# Verify Prometheus is scraping all targets
 curl http://localhost:9090/api/v1/query?query=sensor_temperature_celsius
+curl http://localhost:9090/api/v1/query?query=heatpump_flow_temperature_celsius
 ```
 
 ### Common Issues
@@ -291,6 +313,61 @@ docker-compose up -d
 - Basic power and energy monitoring
 - Simple Grafana dashboard
 - Docker Compose deployment
+
+## 🔗 Related Projects
+
+This project is part of a complete heating system monitoring and control ecosystem:
+
+### [LG R290 Heat Pump Control](https://github.com/stephan-aichholzer/lg-r290-control)
+Docker-based control system for LG R290 7kW heat pump via Modbus TCP:
+- FastAPI backend with Prometheus metrics export
+- Responsive web UI with dark mode
+- LG Auto mode with offset adjustment
+- Manual heating mode with direct temperature control
+- Thermostat integration for automated comfort control
+
+**Integration**: Connected via Docker network (`heatpump_dashboard_default`). The heatpump_dashboard Prometheus instance scrapes real-time heat pump metrics (flow/return temps, compressor status, operating mode) from the control service.
+
+### [Shelly BLU Temperature Monitoring & Thermostat](https://github.com/stephan-aichholzer/shelly-blu-ht)
+IoT monitoring stack with intelligent thermostat control:
+- Shelly Pro 2 as Bluetooth gateway and switch controller
+- Shelly BLU H&T sensors for temperature/humidity measurement
+- FastAPI backend with InfluxDB storage
+- Intelligent thermostat with temperature averaging
+- 4 operating modes: AUTO, ECO, ON, OFF
+
+**Integration**: Connected via Docker network (`shelly_bt_temp_default`). The heatpump_dashboard Prometheus instance scrapes temperature, humidity, battery, and thermostat state metrics from the sensor API.
+
+### Architecture Overview
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    Complete Heating Ecosystem                   │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌──────────────────┐      ┌──────────────────┐               │
+│  │  Shelly BLU H&T  │      │  LG R290 Heat    │               │
+│  │  Sensors         │      │  Pump            │               │
+│  │  (shelly-blu-ht) │      │  (lg-r290-       │               │
+│  │                  │      │   control)       │               │
+│  │  • Temp sensors  │      │  • Modbus TCP    │               │
+│  │  • Thermostat    │      │  • Flow/Return   │               │
+│  │  • Switch control│──────│  • Auto/Manual   │               │
+│  └──────────────────┘      └──────────────────┘               │
+│           │                         │                          │
+│           │                         │                          │
+│           └─────────────┬───────────┘                          │
+│                         │                                      │
+│              ┌──────────▼───────────┐                          │
+│              │  WAGO Energy Meter   │                          │
+│              │  (heatpump_dashboard)│                          │
+│              │                      │                          │
+│              │  • Power monitoring  │                          │
+│              │  • Grid quality      │                          │
+│              │  • Central metrics   │                          │
+│              │  • Prometheus + Graf │                          │
+│              └──────────────────────┘                          │
+└─────────────────────────────────────────────────────────────────┘
+```
 
 ## 🤝 Contributing
 

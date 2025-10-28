@@ -6,7 +6,101 @@ This project implements a comprehensive energy monitoring solution for a 3-phase
 
 **Current Version: v2.2** - Enhanced with power spike filtering, monotonic energy counter protection, heat pump integration, and automated backup capabilities.
 
+## Related Projects Integration
+
+This project serves as the **central monitoring hub** for a complete heating system ecosystem, integrating metrics from:
+
+1. **[LG R290 Heat Pump Control](https://github.com/stephan-aichholzer/lg-r290-control)** - LG R290 7kW heat pump Modbus TCP control
+   - Real-time heat pump status (flow/return temps, compressor state)
+   - Operating mode monitoring (Auto/Manual heating)
+   - Connected via Docker network: `heatpump_dashboard_default`
+
+2. **[Shelly BLU Temperature Monitoring & Thermostat](https://github.com/stephan-aichholzer/shelly-blu-ht)** - IoT sensor monitoring with thermostat
+   - Temperature/humidity from Shelly BLU H&T sensors
+   - Thermostat control state and target temperatures
+   - Connected via Docker network: `shelly_bt_temp_default`
+
+3. **WAGO Energy Meter** (this project) - 3-phase power and energy monitoring
+   - Power consumption monitoring (6W standby / 46W active)
+   - Grid quality metrics (frequency, power factor)
+   - Centralized Prometheus + Grafana dashboard
+
 ## Physical Architecture
+
+### Complete Heating Ecosystem
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                        Complete Heating System                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌──────────────────┐              ┌──────────────────┐
+│  Shelly BLU H&T  │              │  LG R290 Heat    │
+│  Sensors         │              │  Pump (7kW)      │
+│  (Bluetooth)     │              │  (Modbus RTU)    │
+└────────┬─────────┘              └────────┬─────────┘
+         │                                 │
+         │ BT                             │ RS485
+         ▼                                 ▼
+┌──────────────────┐              ┌──────────────────┐          ┌─────────────────┐
+│  Shelly Pro 2    │              │  Waveshare       │          │   WAGO Energy   │
+│  (BT Gateway +   │              │  RS485-to-ETH    │          │   Meter         │
+│   Switch)        │              │  Gateway         │◄─────────│   (3-phase)     │
+└────────┬─────────┘              └────────┬─────────┘  RS485   └─────────────────┘
+         │                                 │
+         │ Ethernet                        │ Ethernet (Modbus TCP)
+         │                                 │
+         └──────────────────┬──────────────┘
+                            │
+                            ▼
+         ┌─────────────────────────────────────────────┐
+         │        Raspberry Pi Host System             │
+         │                                             │
+         │  ┌─────────────────────────────────────┐   │
+         │  │  shelly-blu-ht Stack                │   │
+         │  │  (shelly_bt_temp_default network)   │   │
+         │  │  ┌─────────────────────────────┐    │   │
+         │  │  │  iot-api:8000 (FastAPI)     │    │   │
+         │  │  │  • Sensor polling           │    │   │
+         │  │  │  • Thermostat control       │    │   │
+         │  │  │  • Prometheus metrics       │    │   │
+         │  │  └─────────────────────────────┘    │   │
+         │  └─────────────────────────────────────┘   │
+         │                                             │
+         │  ┌─────────────────────────────────────┐   │
+         │  │  lg-r290-control Stack              │   │
+         │  │  (heatpump_dashboard_default net)   │   │
+         │  │  ┌─────────────────────────────┐    │   │
+         │  │  │  lg_r290_service:8000       │    │   │
+         │  │  │  • Modbus TCP control       │    │   │
+         │  │  │  • Heat pump monitoring     │    │   │
+         │  │  │  • Prometheus metrics       │    │   │
+         │  │  └─────────────────────────────┘    │   │
+         │  └─────────────────────────────────────┘   │
+         │                                             │
+         │  ┌─────────────────────────────────────┐   │
+         │  │  heatpump_dashboard Stack (THIS)    │   │
+         │  │  ┌─────────────────────────────┐    │   │
+         │  │  │  modbus_exporter:9100       │    │   │
+         │  │  │  • WAGO polling             │    │   │
+         │  │  └─────────────────────────────┘    │   │
+         │  │  ┌─────────────────────────────┐    │   │
+         │  │  │  prometheus:9090            │    │   │
+         │  │  │  • Scrapes all metrics:     │    │   │
+         │  │  │    - WAGO energy            │    │   │
+         │  │  │    - Temperature sensors    │◄───┼───┼── Scrapes
+         │  │  │    - Heat pump status       │    │   │   external
+         │  │  └─────────────────────────────┘    │   │   APIs
+         │  │  ┌─────────────────────────────┐    │   │
+         │  │  │  grafana:3000               │    │   │
+         │  │  │  • Central dashboard        │    │   │
+         │  │  │  • Unified visualization    │    │   │
+         │  │  └─────────────────────────────┘    │   │
+         │  └─────────────────────────────────────┘   │
+         └─────────────────────────────────────────────┘
+```
+
+### Individual System: WAGO Energy Monitoring
 
 ```
 ┌─────────────────┐    RS485    ┌──────────────────┐    Ethernet    ┌─────────────────────────┐
@@ -94,6 +188,49 @@ This project implements a comprehensive energy monitoring solution for a 3-phase
 
 ### Data Flow
 
+#### Complete Ecosystem Data Flow
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                         Data Collection                                  │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  Shelly BLU Sensors → Shelly Pro 2 → iot-api:8000 ──┐                  │
+│  (Bluetooth)          (HTTP Poll)    (Prometheus)    │                  │
+│                                                       │                  │
+│  LG R290 Heat Pump → Waveshare → lg_r290_service ───┼─────┐            │
+│  (Modbus RTU)        (TCP)       (Prometheus)        │     │            │
+│                                                       │     │            │
+│  WAGO Energy Meter → Waveshare → modbus_exporter ───┘     │            │
+│  (Modbus RTU)        (TCP)       (Prometheus)              │            │
+│                                                             │            │
+└─────────────────────────────────────────────────────────────┼────────────┘
+                                                              │
+                                                              ▼
+┌──────────────────────────────────────────────────────────────────────────┐
+│                     Central Monitoring & Storage                         │
+├──────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│               prometheus:9090 (heatpump_dashboard)                       │
+│               ┌────────────────────────────────┐                         │
+│               │  Scrape Targets (30s):        │                         │
+│               │  • modbus_exporter:9100        │  (WAGO power/energy)   │
+│               │  • iot-api:8000/metrics        │  (Temp sensors)        │
+│               │  • lg_r290_service:8000/metrics│  (Heat pump status)    │
+│               └────────────────────────────────┘                         │
+│                           │                                              │
+│                           │ Query                                        │
+│                           ▼                                              │
+│               ┌────────────────────────────────┐                         │
+│               │  grafana:3000                  │                         │
+│               │  • Unified dashboard           │                         │
+│               │  • Cross-system visualization  │                         │
+│               │  • 1-year data retention       │                         │
+│               └────────────────────────────────┘                         │
+│                                                                          │
+└──────────────────────────────────────────────────────────────────────────┘
+```
+
+#### Individual System: WAGO Energy Monitoring
 ```
 WAGO Meter → RS485 → Waveshare Gateway → Network → Raspberry Pi → Modbus Exporter → Prometheus → Grafana
                                         (192.168.2.10:8899)      (Container)    (Container)  (Container)
@@ -145,7 +282,7 @@ WAGO Meter → RS485 → Waveshare Gateway → Network → Raspberry Pi → Modb
 
 ### 2. Prometheus Container
 
-**Purpose**: Time-series database running on Raspberry Pi
+**Purpose**: Central time-series database running on Raspberry Pi
 
 **Storage**:
 - Data stored in `prometheus_data/` volume on Raspberry Pi filesystem
@@ -154,10 +291,25 @@ WAGO Meter → RS485 → Waveshare Gateway → Network → Raspberry Pi → Modb
 
 **Configuration**:
 - Scrape interval: 30 seconds
-- Scrape targets:
-  - `modbus_exporter:9100` - WAGO energy meter metrics
-  - `iot-api:8000` - Temperature sensor metrics (external network)
-  - `lg_r290_service:8000` - Heat pump metrics (external network)
+- **Scrape targets** (multi-system integration):
+
+  1. **WAGO Energy Meter** (internal network)
+     - Target: `modbus_exporter:9100`
+     - Metrics: Power, energy, frequency, power factor
+     - Network: `heatpump_dashboard_default`
+
+  2. **Temperature Sensors** (external network) ✨ *v2.1+*
+     - Target: `iot-api:8000/metrics`
+     - Source: [shelly-blu-ht project](https://github.com/stephan-aichholzer/shelly-blu-ht)
+     - Metrics: Temperature, humidity, battery, thermostat state
+     - Network: `shelly_bt_temp_default`
+
+  3. **Heat Pump Control** (external network) ✨ *v2.2+*
+     - Target: `lg_r290_service:8000/metrics`
+     - Source: [lg-r290-control project](https://github.com/stephan-aichholzer/lg-r290-control)
+     - Metrics: Flow/return temps, compressor state, operating mode
+     - Network: `heatpump_dashboard_default`
+
 - Web interface: `http://raspberry-pi-ip:9090`
 
 ### 3. Grafana Container
@@ -183,11 +335,53 @@ WAGO Meter → RS485 → Waveshare Gateway → Network → Raspberry Pi → Modb
 ### External Access
 - **Grafana Dashboard**: `http://[raspberry-pi-ip]:3000`
 - **Prometheus Interface**: `http://[raspberry-pi-ip]:9090`
-- **Metrics Endpoint**: `http://[raspberry-pi-ip]:9100/metrics`
+- **WAGO Metrics Endpoint**: `http://[raspberry-pi-ip]:9100/metrics`
+- **Temperature Sensor API**: `http://[raspberry-pi-ip]:8001` (shelly-blu-ht)
+- **Heat Pump Control**: `http://[raspberry-pi-ip]:8002` (lg-r290-control)
+- **Heat Pump UI**: `http://[raspberry-pi-ip]:8080` (lg-r290-control)
+
+### Docker Network Configuration
+
+**Network Topology**:
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Docker Networks on Raspberry Pi                                │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ┌────────────────────────────────────────────┐                │
+│  │  shelly_bt_temp_default (external)         │                │
+│  │  • iot-api (Shelly BLU sensors)            │                │
+│  │  • prometheus (scrapes metrics)            │                │
+│  │  • grafana (queries data)                  │                │
+│  │  • lg_r290_service (reads thermostat mode) │                │
+│  └────────────────────────────────────────────┘                │
+│                                                                 │
+│  ┌────────────────────────────────────────────┐                │
+│  │  heatpump_dashboard_default (internal)     │                │
+│  │  • modbus_exporter (WAGO polling)          │                │
+│  │  • prometheus (scrapes metrics)            │                │
+│  │  • grafana (queries data)                  │                │
+│  │  • lg_r290_service (heat pump control)     │                │
+│  └────────────────────────────────────────────┘                │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+**Network Details**:
+1. **`heatpump_dashboard_default`** (internal network)
+   - Created by heatpump_dashboard docker-compose
+   - Connects: modbus_exporter, prometheus, grafana
+   - Also used by lg-r290-control for integration
+
+2. **`shelly_bt_temp_default`** (external network)
+   - Created by shelly-blu-ht docker-compose
+   - Connected to by: prometheus, grafana (for scraping sensor metrics)
+   - Enables temperature sensor integration
 
 ### Internal Communication
 - **Modbus Gateway**: `192.168.2.10:8899` (external to Raspberry Pi)
 - **Container Network**: Docker internal networking between containers
+- **Cross-Project**: External Docker networks enable multi-stack integration
 
 ### Modbus Parameters
 - **Protocol**: Modbus TCP
@@ -368,3 +562,145 @@ docker-compose logs grafana
 # Access container shell
 docker-compose exec modbus_exporter /bin/bash
 ```
+
+## Multi-System Integration Guide
+
+### Setting Up the Complete Ecosystem
+
+This project integrates with two external systems to provide comprehensive heating system monitoring. Here's how to set up the complete stack:
+
+#### 1. Prerequisites
+
+All three projects should be cloned on the same Raspberry Pi:
+
+```bash
+cd ~/projects
+git clone https://github.com/stephan-aichholzer/shelly-blu-ht.git shelly_bt_temp
+git clone https://github.com/stephan-aichholzer/lg-r290-control.git lg_r290_control
+git clone https://github.com/stephan-aichholzer/heatpump_dashboard.git heatpump_dashboard
+```
+
+#### 2. Start Systems in Order
+
+**Step 1: Start Shelly BLU Temperature System**
+```bash
+cd ~/projects/shelly_bt_temp
+docker-compose up -d
+# This creates the shelly_bt_temp_default network
+```
+
+**Step 2: Start Heat Pump Dashboard (creates heatpump_dashboard_default network)**
+```bash
+cd ~/projects/heatpump_dashboard
+docker-compose up -d
+# This creates the heatpump_dashboard_default network
+```
+
+**Step 3: Start LG R290 Heat Pump Control**
+```bash
+cd ~/projects/lg_r290_control
+docker-compose up -d
+# This connects to both external networks
+```
+
+#### 3. Verify Integration
+
+**Check Network Connectivity:**
+```bash
+# Verify Prometheus can reach all targets
+docker exec -it heatpump_dashboard_prometheus curl http://modbus_exporter:9100/metrics
+docker exec -it heatpump_dashboard_prometheus curl http://iot-api:8000/metrics
+docker exec -it heatpump_dashboard_prometheus curl http://lg_r290_service:8000/metrics
+```
+
+**Check Prometheus Targets:**
+```bash
+# Open Prometheus UI
+open http://localhost:9090/targets
+
+# Expected targets:
+# ✓ wago (modbus_exporter:9100) - UP
+# ✓ temperature-sensors (iot-api:8000) - UP
+# ✓ heatpump (lg_r290_service:8000) - UP
+```
+
+**Verify Metrics Collection:**
+```bash
+# WAGO energy metrics
+curl http://localhost:9090/api/v1/query?query=wago_power_total_kw
+
+# Temperature sensor metrics
+curl http://localhost:9090/api/v1/query?query=sensor_temperature_celsius
+
+# Heat pump metrics
+curl http://localhost:9090/api/v1/query?query=heatpump_flow_temperature_celsius
+```
+
+#### 4. Dashboard Configuration
+
+The Grafana dashboard (`dashboards/heat_pump_dashboard.json`) includes panels for all integrated systems:
+
+**Available Metrics:**
+- **WAGO Energy**: Power consumption, energy tracking, grid quality
+- **Temperature Sensors**: Indoor/outdoor temps, humidity, battery levels, thermostat state
+- **Heat Pump**: Flow/return temps, compressor state, operating mode
+
+Import the dashboard into Grafana for unified visualization across all systems.
+
+### Integration Architecture Benefits
+
+**Centralized Monitoring:**
+- Single Prometheus instance scrapes all systems
+- Unified Grafana dashboard for complete system view
+- 1-year data retention for all metrics
+
+**Cross-System Analysis:**
+- Correlate power consumption with heat pump operation
+- Monitor temperature impact on heating cycles
+- Track energy efficiency across the complete system
+
+**Simplified Management:**
+- Single backup strategy covers all time-series data
+- One monitoring endpoint for all systems
+- Consistent metric naming and labeling
+
+### Troubleshooting Multi-System Integration
+
+**Temperature Sensors Not Visible:**
+```bash
+# Check shelly_bt_temp_default network exists
+docker network ls | grep shelly_bt_temp_default
+
+# Verify Prometheus is on the network
+docker network inspect shelly_bt_temp_default | grep prometheus
+
+# Check iot-api is reachable
+docker exec heatpump_dashboard_prometheus ping -c 1 iot-api
+```
+
+**Heat Pump Metrics Missing:**
+```bash
+# Check heatpump_dashboard_default network
+docker network ls | grep heatpump_dashboard_default
+
+# Verify lg_r290_service is on the network
+docker network inspect heatpump_dashboard_default | grep lg_r290_service
+
+# Test connectivity
+docker exec heatpump_dashboard_prometheus curl http://lg_r290_service:8000/metrics
+```
+
+**Restart Order After System Reboot:**
+1. Start shelly-blu-ht first (creates network)
+2. Start heatpump_dashboard second (creates network)
+3. Start lg-r290-control last (connects to both networks)
+
+All containers have `restart: unless-stopped`, so they should auto-start on boot in the correct order.
+
+## Related Documentation
+
+For detailed information about the integrated systems:
+
+- **[LG R290 Control Architecture](https://github.com/stephan-aichholzer/lg-r290-control/blob/main/ARCHITECTURE.md)** - Heat pump control system design
+- **[Shelly BLU Architecture](https://github.com/stephan-aichholzer/shelly-blu-ht/blob/main/ARCHITECTURE.md)** - Temperature sensor and thermostat architecture
+- **[LG R290 Modbus Reference](https://github.com/stephan-aichholzer/lg-r290-control/blob/main/MODBUS.md)** - Complete LG heat pump register mapping
