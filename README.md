@@ -18,7 +18,7 @@ A comprehensive energy monitoring solution for heat pump systems using WAGO ener
 - **Live KPIs** - Current power, frequency, power factor, daily energy
 - **Time Series Graphs** - Power trends, energy consumption, phase balance
 - **Color-coded Alerts** - Visual indicators for system status
-- **Standard Electrical Colors** - L1=Red, L2=Yellow, L3=Blue
+- **Standard Electrical Colors** - L1=Brown, L2=Black, L3=Grey (EU standard IEC 60446)
 
 ### Technical Specifications
 - **Polling Interval**: 30 seconds

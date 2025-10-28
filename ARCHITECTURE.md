@@ -328,7 +328,7 @@ WAGO Meter → RS485 → Waveshare Gateway → Network → Raspberry Pi → Modb
 - **Grid quality**: Frequency stability and power factor trends
 - **Color-coded alerts**: Heat pump optimized thresholds (0-1-2kW)
 - Historical energy usage trends with phase analysis
-- Standard electrical colors (L1=Red, L2=Yellow, L3=Blue)
+- Standard electrical colors (L1=Brown, L2=Black, L3=Grey per EU IEC 60446)
 
 ## Network Configuration
 
