@@ -5,7 +5,7 @@
 
 # Default values
 START_DATE=$(date -d '30 days ago' '+%Y-%m-%d')
-END_DATE=$(date '+%Y-%m-%d')
+END_DATE=$(date -d 'yesterday' '+%Y-%m-%d')  # Exclude today (incomplete data)
 FORMAT="table"
 
 # Parse arguments
