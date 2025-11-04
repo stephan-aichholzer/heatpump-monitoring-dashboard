@@ -1,29 +1,41 @@
-# WAGO Energy Monitoring Dashboard - Architecture
+# Heat Pump Monitoring Dashboard - Architecture
 
 ## Overview
 
-This project implements a comprehensive energy monitoring solution for a 3-phase electrical installation using a WAGO energy meter connected through a Waveshare RS485 Modbus Gateway. The entire monitoring stack runs on a Raspberry Pi host system using Docker containers.
+This project implements a comprehensive heating system monitoring platform with integrated energy metering, heat pump monitoring, and temperature sensing. The entire monitoring stack runs on a Raspberry Pi (or any Docker-capable host) using containerized services with Prometheus time-series storage and Grafana visualization.
 
 **Current Version: v2.2** - Enhanced with power spike filtering, monotonic energy counter protection, heat pump integration, and automated backup capabilities.
 
-## Related Projects Integration
+## System Purpose
 
-This project serves as the **central monitoring hub** for a complete heating system ecosystem, integrating metrics from:
+This project has evolved from a simple energy meter reader into a **comprehensive heating system monitoring platform**. It now serves as the central data collection and visualization hub for:
 
-1. **[LG R290 Heat Pump Control](https://github.com/stephan-aichholzer/lg-r290-control)** - LG R290 7kW heat pump Modbus TCP control
+1. **Energy metering** - Modbus-based power/energy monitoring (WAGO implementation, adaptable to Shelly Pro 3EM or any Modbus meter)
+2. **Heat pump control & monitoring** - Real-time heat pump status and performance metrics
+3. **Temperature sensing** - Multi-zone climate monitoring with smart thermostat integration
+4. **Unified analytics** - Cross-system correlation and insights for complete heating system visibility
+
+The architecture is **modular and extensible** - you can use just the energy monitoring component or integrate the complete heating ecosystem.
+
+## Integrated System Components
+
+This dashboard serves as the **central monitoring hub** for a complete heating system ecosystem, integrating metrics from:
+
+1. **Energy Metering** (this project) - 3-phase power and energy monitoring
+   - Power consumption monitoring (6W standby / 46W active)
+   - Grid quality metrics (frequency, power factor)
+   - Centralized Prometheus + Grafana dashboard
+   - Default: WAGO energy meter (adaptable to other Modbus meters)
+
+2. **[LG R290 Heat Pump Control](https://github.com/stephan-aichholzer/lg-r290-control)** - LG R290 7kW heat pump Modbus TCP control (optional integration)
    - Real-time heat pump status (flow/return temps, compressor state)
    - Operating mode monitoring (Auto/Manual heating)
    - Connected via Docker network: `heatpump_dashboard_default`
 
-2. **[Shelly BLU Temperature Monitoring & Thermostat](https://github.com/stephan-aichholzer/shelly-blu-ht)** - IoT sensor monitoring with thermostat
+3. **[Shelly BLU Temperature Monitoring & Thermostat](https://github.com/stephan-aichholzer/shelly-blu-ht)** - IoT sensor monitoring with thermostat (optional integration)
    - Temperature/humidity from Shelly BLU H&T sensors
    - Thermostat control state and target temperatures
    - Connected via Docker network: `shelly_bt_temp_default`
-
-3. **WAGO Energy Meter** (this project) - 3-phase power and energy monitoring
-   - Power consumption monitoring (6W standby / 46W active)
-   - Grid quality metrics (frequency, power factor)
-   - Centralized Prometheus + Grafana dashboard
 
 ## Physical Architecture
 
@@ -43,9 +55,9 @@ This project serves as the **central monitoring hub** for a complete heating sys
          │ BT                             │ RS485
          ▼                                 ▼
 ┌──────────────────┐              ┌──────────────────┐          ┌─────────────────┐
-│  Shelly Pro 2    │              │  Waveshare       │          │   WAGO Energy   │
-│  (BT Gateway +   │              │  RS485-to-ETH    │          │   Meter         │
-│   Switch)        │              │  Gateway         │◄─────────│   (3-phase)     │
+│  Shelly Pro 2    │              │  Waveshare       │          │  Energy Meter   │
+│  (BT Gateway +   │              │  RS485-to-ETH    │          │  (Modbus RTU)   │
+│   Switch)        │              │  Gateway         │◄─────────│   3-phase       │
 └────────┬─────────┘              └────────┬─────────┘  RS485   └─────────────────┘
          │                                 │
          │ Ethernet                        │ Ethernet (Modbus TCP)
@@ -100,14 +112,14 @@ This project serves as the **central monitoring hub** for a complete heating sys
          └─────────────────────────────────────────────┘
 ```
 
-### Individual System: WAGO Energy Monitoring
+### Individual System: Energy Meter Monitoring
 
 ```
-┌─────────────────┐    RS485    ┌──────────────────┐    Ethernet    ┌─────────────────────────┐
-│   WAGO Energy   │◄───────────►│   Waveshare      │◄──────────────►│    Raspberry Pi         │
-│   Meter         │             │   RS485 Modbus   │                │    Host System          │
-│   (Slave ID: 2) │             │   Gateway        │                │                         │
-└─────────────────┘             │   192.168.2.10   │                │  ┌─────────────────────┐│
+┌─────────────────┐    RS485/   ┌──────────────────┐    Ethernet    ┌─────────────────────────┐
+│  Energy Meter   │◄──Modbus──►│   Modbus Gateway │◄──────────────►│    Raspberry Pi         │
+│  (3-phase)      │    RTU      │   (if RS485)     │                │    Host System          │
+│  Modbus slave   │             │   or direct TCP  │                │                         │
+└─────────────────┘             │   192.168.x.x    │                │  ┌─────────────────────┐│
                                 │   Port: 8899     │                │  │  Docker Containers  ││
                                 └──────────────────┘                │  │                     ││
                                                                     │  │  ┌─────────────────┐││
@@ -137,17 +149,19 @@ This project serves as the **central monitoring hub** for a complete heating sys
 
 ### Hardware Components
 
-1. **WAGO Energy Meter**
+1. **Energy Meter (3-phase Modbus)**
    - 3-phase electrical energy measurement device
-   - Modbus RTU slave (ID: 2)
-   - Connected via RS485 interface
+   - Modbus RTU or Modbus TCP protocol
+   - Default implementation: WAGO (adaptable to Shelly Pro 3EM, or any Modbus meter)
+   - Connected via RS485 or Ethernet
 
-2. **Waveshare RS485 Modbus Gateway**
+2. **Modbus Gateway (if using RS485)**
    - Converts RS485 Modbus RTU to TCP/IP
-   - IP Address: `192.168.2.10:8899`
-   - Enables network access to the WAGO meter
+   - Example: Waveshare RS485-to-Ethernet adapter
+   - Configurable IP/port (default example: `192.168.2.10:8899`)
+   - Not needed for direct Modbus TCP meters
 
-3. **Raspberry Pi Host System**
+3. **Raspberry Pi Host System (or any Docker-capable host)**
    - Runs Docker Engine
    - Hosts all monitoring containers
    - Provides persistent data storage
@@ -200,8 +214,8 @@ This project serves as the **central monitoring hub** for a complete heating sys
 │  LG R290 Heat Pump → Waveshare → lg_r290_service ───┼─────┐            │
 │  (Modbus RTU)        (TCP)       (Prometheus)        │     │            │
 │                                                       │     │            │
-│  WAGO Energy Meter → Waveshare → modbus_exporter ───┘     │            │
-│  (Modbus RTU)        (TCP)       (Prometheus)              │            │
+│  Energy Meter → Modbus Gateway → modbus_exporter ───┘     │            │
+│  (Modbus RTU)   (RS485→TCP)      (Prometheus)              │            │
 │                                                             │            │
 └─────────────────────────────────────────────────────────────┼────────────┘
                                                               │
@@ -213,7 +227,7 @@ This project serves as the **central monitoring hub** for a complete heating sys
 │               prometheus:9090 (heatpump_dashboard)                       │
 │               ┌────────────────────────────────┐                         │
 │               │  Scrape Targets (30s):        │                         │
-│               │  • modbus_exporter:9100        │  (WAGO power/energy)   │
+│               │  • modbus_exporter:9100        │  (Energy meter)        │
 │               │  • iot-api:8000/metrics        │  (Temp sensors)        │
 │               │  • lg_r290_service:8000/metrics│  (Heat pump status)    │
 │               └────────────────────────────────┘                         │
@@ -230,17 +244,17 @@ This project serves as the **central monitoring hub** for a complete heating sys
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
-#### Individual System: WAGO Energy Monitoring
+#### Individual System: Energy Meter Monitoring
 ```
-WAGO Meter → RS485 → Waveshare Gateway → Network → Raspberry Pi → Modbus Exporter → Prometheus → Grafana
-                                        (192.168.2.10:8899)      (Container)    (Container)  (Container)
+Energy Meter → RS485/Modbus → Gateway (if RS485) → Network → Raspberry Pi → Modbus Exporter → Prometheus → Grafana
+               RTU/TCP        TCP adapter         (LAN)     (Docker Host)   (Container)       (Container)   (Container)
 ```
 
 ## Component Details
 
 ### 1. Modbus Exporter Container (`exporter/exporter.py`)
 
-**Purpose**: Polls the WAGO energy meter via Waveshare gateway and exposes metrics
+**Purpose**: Polls the energy meter via Modbus (RTU/TCP) and exposes Prometheus metrics
 
 **Runtime Environment**:
 - Docker container on Raspberry Pi
@@ -256,9 +270,9 @@ WAGO Meter → RS485 → Waveshare Gateway → Network → Raspberry Pi → Modb
 - **Monotonic energy counter** ✨ *v2.2* - Prevents backward energy counter jumps
 - **Connection resilience** ✨ *v2.2* - Automatic reconnection on connection loss
 
-**Monitored Registers**:
-| Metric | Register | Description |
-|--------|----------|-------------|
+**Monitored Registers (WAGO default, adaptable to other meters)**:
+| Metric | WAGO Register | Description |
+|--------|---------------|-------------|
 | Total Power | `0x5012` | Total active power (kW) |
 | L1 Power | `0x5014` | L1 phase active power (kW) |
 | L2 Power | `0x5016` | L2 phase active power (kW) |
@@ -271,6 +285,8 @@ WAGO Meter → RS485 → Waveshare Gateway → Network → Raspberry Pi → Modb
 | L3 Energy | `0x600A` | L3 phase active energy (kWh) |
 
 ✨ *New in v2.0* - Enhanced grid quality monitoring for heat pump systems
+
+**Note**: Register addresses are specific to WAGO meters. For other meters (Shelly Pro 3EM, etc.), update these addresses in `exporter/exporter.py` to match your meter's Modbus register map.
 
 **Prometheus Metrics Exposed**:
 - `wago_power_total_kw` - Total active power (kW)
@@ -293,9 +309,10 @@ WAGO Meter → RS485 → Waveshare Gateway → Network → Raspberry Pi → Modb
 - Scrape interval: 30 seconds
 - **Scrape targets** (multi-system integration):
 
-  1. **WAGO Energy Meter** (internal network)
+  1. **Energy Meter** (internal network)
      - Target: `modbus_exporter:9100`
      - Metrics: Power, energy, frequency, power factor
+     - Source: WAGO (default), adaptable to any Modbus meter
      - Network: `heatpump_dashboard_default`
 
   2. **Temperature Sensors** (external network) ✨ *v2.1+*
@@ -335,7 +352,7 @@ WAGO Meter → RS485 → Waveshare Gateway → Network → Raspberry Pi → Modb
 ### External Access
 - **Grafana Dashboard**: `http://[raspberry-pi-ip]:3000`
 - **Prometheus Interface**: `http://[raspberry-pi-ip]:9090`
-- **WAGO Metrics Endpoint**: `http://[raspberry-pi-ip]:9100/metrics`
+- **Energy Meter Metrics Endpoint**: `http://[raspberry-pi-ip]:9100/metrics`
 - **Temperature Sensor API**: `http://[raspberry-pi-ip]:8001` (shelly-blu-ht)
 - **Heat Pump Control**: `http://[raspberry-pi-ip]:8002` (lg-r290-control)
 - **Heat Pump UI**: `http://[raspberry-pi-ip]:8080` (lg-r290-control)
@@ -358,7 +375,7 @@ WAGO Meter → RS485 → Waveshare Gateway → Network → Raspberry Pi → Modb
 │                                                                 │
 │  ┌────────────────────────────────────────────┐                │
 │  │  heatpump_dashboard_default (internal)     │                │
-│  │  • modbus_exporter (WAGO polling)          │                │
+│  │  • modbus_exporter (energy meter polling)  │                │
 │  │  • prometheus (scrapes metrics)            │                │
 │  │  • grafana (queries data)                  │                │
 │  │  • lg_r290_service (heat pump control)     │                │
@@ -641,7 +658,7 @@ curl http://localhost:9090/api/v1/query?query=heatpump_flow_temperature_celsius
 The Grafana dashboard (`dashboards/heat_pump_dashboard.json`) includes panels for all integrated systems:
 
 **Available Metrics:**
-- **WAGO Energy**: Power consumption, energy tracking, grid quality
+- **Energy Meter**: Power consumption, energy tracking, grid quality
 - **Temperature Sensors**: Indoor/outdoor temps, humidity, battery levels, thermostat state
 - **Heat Pump**: Flow/return temps, compressor state, operating mode
 

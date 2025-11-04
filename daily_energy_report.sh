@@ -78,6 +78,10 @@ else
     echo "-----------|-------------|-------------|-------------|--------"
 fi
 
+# Initialize summary variables for table format
+TOTAL_KWH=0
+VALID_DAYS=0
+
 # Extract daily values
 for i in $(seq 0 $DAYS); do
     DATE=$(date -d "$START_DATE + $i days" '+%Y-%m-%d')
@@ -97,6 +101,9 @@ for i in $(seq 0 $DAYS); do
             printf "%s,%.1f,%.1f,%.1f,OK\n" "$DATE" "$START_VAL" "$END_VAL" "$DAILY"
         else
             printf "%s | %11.1f | %11.1f | %11.1f | OK\n" "$DATE" "$START_VAL" "$END_VAL" "$DAILY"
+            # Accumulate for summary
+            TOTAL_KWH=$(echo "$TOTAL_KWH + $DAILY" | bc -l)
+            VALID_DAYS=$((VALID_DAYS + 1))
         fi
     else
         if [ "$FORMAT" = "csv" ]; then
@@ -106,3 +113,11 @@ for i in $(seq 0 $DAYS); do
         fi
     fi
 done
+
+# Print summary for table format
+if [ "$FORMAT" != "csv" ] && [ $VALID_DAYS -gt 0 ]; then
+    AVERAGE=$(echo "scale=1; $TOTAL_KWH / $VALID_DAYS" | bc -l)
+    echo "-----------|-------------|-------------|-------------|--------"
+    printf "%-10s | %11s | %11s | %11.1f | Summary\n" "Total" "" "" "$TOTAL_KWH"
+    printf "%-10s | %11s | %11s | %11.1f | (%d days)\n" "Average" "" "" "$AVERAGE" "$VALID_DAYS"
+fi
