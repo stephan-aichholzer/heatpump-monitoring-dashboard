@@ -1,16 +1,34 @@
+version: '3.8'
+
+# ==============================================================================
+# Heat Pump Dashboard - Monitoring and Visualization
+# ==============================================================================
+# This stack aggregates metrics from multiple sources:
+# - modbus_exporter: WAGO/Modbus device metrics (port 9100)
+# - iot-api: Shelly BT temperature sensor metrics (via shelly_bt_temp_default network)
+# - lg_r290_service: Heat pump metrics (via heatpump_dashboard_default network)
+#
+# Prometheus scrapes all sources and stores with 1 year retention
+# Grafana provides visualization dashboards
+# ==============================================================================
+
 services:
+  # Modbus Exporter for WAGO devices
   modbus_exporter:
     build: ./exporter/
+    container_name: modbus_exporter
     ports:
-      - "9100:9100"
+      - "9100:9100"  # Prometheus metrics endpoint
     restart: unless-stopped
 
+  # Prometheus - Metrics aggregation and storage
   prometheus:
     image: prom/prometheus
+    container_name: prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
       - '--storage.tsdb.path=/prometheus'
-      - '--storage.tsdb.retention.time=1y'
+      - '--storage.tsdb.retention.time=1y'  # 1 year data retention
       - '--web.console.libraries=/etc/prometheus/console_libraries'
       - '--web.console.templates=/etc/prometheus/consoles'
       - '--web.enable-lifecycle'
@@ -18,21 +36,23 @@ services:
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus
     ports:
-      - "9090:9090"
+      - "9090:9090"  # Prometheus web UI and API
     networks:
-      - default
-      - shelly_bt_temp_default
+      - default  # Access to modbus_exporter
+      - shelly_bt_temp_default  # Access to iot-api for temperature metrics
     restart: unless-stopped
 
+  # Grafana - Dashboard and visualization
   grafana:
     image: grafana/grafana
+    container_name: grafana
     volumes:
       - grafana_data:/var/lib/grafana
     ports:
-      - "3000:3000"
+      - "3000:3000"  # Grafana web UI
     networks:
-      - default
-      - shelly_bt_temp_default
+      - default  # Access to Prometheus
+      - shelly_bt_temp_default  # Optional: direct access to iot-api
     restart: unless-stopped
 
 volumes:
