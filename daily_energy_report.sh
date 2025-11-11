@@ -69,18 +69,20 @@ fi
 
 # Output header
 if [ "$FORMAT" = "csv" ]; then
-    echo "Date,Start_kWh,End_kWh,Daily_kWh,Status"
+    echo "Date,Start_kWh,End_kWh,Daily_kWh,Avg_Outdoor_Temp_C,Status"
 else
-    echo "Extracting daily kWh consumption from Prometheus data..."
+    echo "Extracting daily kWh consumption and outdoor temperature from Prometheus data..."
     echo "Date Range: $START_DATE to $END_DATE ($((DAYS + 1)) days)"
     echo ""
-    echo "Date       | Start (kWh) | End (kWh)   | Daily (kWh) | Status"
-    echo "-----------|-------------|-------------|-------------|--------"
+    echo "Date       | Start (kWh) | End (kWh)   | Daily (kWh) | Avg Temp | Status"
+    echo "-----------|-------------|-------------|-------------|----------|--------"
 fi
 
 # Initialize summary variables for table format
 TOTAL_KWH=0
+TOTAL_TEMP=0
 VALID_DAYS=0
+VALID_TEMP_DAYS=0
 
 # Extract daily values
 for i in $(seq 0 $DAYS); do
@@ -94,30 +96,74 @@ for i in $(seq 0 $DAYS); do
     # Query value at end of day
     END_VAL=$(curl -s "http://localhost:9090/api/v1/query?query=wago_energy_total_kwh&time=${MIDNIGHT_END}" | jq -r '.data.result[0].value[1] // "N/A"')
 
+    # Query average outdoor temperature for the day
+    # URL encode properly: = becomes %3D, " becomes %22, { becomes %7B, } becomes %7D, [ becomes %5B, ] becomes %5D
+    AVG_TEMP=$(curl -s "http://localhost:9090/api/v1/query?query=avg_over_time(sensor_temperature_celsius%7Bsensor_name%3D%22temp_outdoor%22%7D%5B1d%5D)&time=${MIDNIGHT_END}" | jq -r '.data.result[0].value[1] // "N/A"')
+
     # Calculate daily consumption
     if [[ "$START_VAL" != "N/A" && "$END_VAL" != "N/A" ]]; then
         DAILY=$(echo "$END_VAL - $START_VAL" | bc -l)
-        if [ "$FORMAT" = "csv" ]; then
-            printf "%s,%.1f,%.1f,%.1f,OK\n" "$DATE" "$START_VAL" "$END_VAL" "$DAILY"
+
+        # Format temperature display
+        if [[ "$AVG_TEMP" != "N/A" ]]; then
+            TEMP_DISPLAY=$(printf "%.1f°C" "$AVG_TEMP")
         else
-            printf "%s | %11.1f | %11.1f | %11.1f | OK\n" "$DATE" "$START_VAL" "$END_VAL" "$DAILY"
+            TEMP_DISPLAY="N/A"
+        fi
+
+        if [ "$FORMAT" = "csv" ]; then
+            # Round temperature to 1 decimal place for CSV
+            if [[ "$AVG_TEMP" != "N/A" ]]; then
+                TEMP_CSV=$(printf "%.1f" "$AVG_TEMP")
+            else
+                TEMP_CSV="N/A"
+            fi
+            printf "%s,%.1f,%.1f,%.1f,%s,OK\n" "$DATE" "$START_VAL" "$END_VAL" "$DAILY" "$TEMP_CSV"
+        else
+            printf "%s | %11.1f | %11.1f | %11.1f | %8s | OK\n" "$DATE" "$START_VAL" "$END_VAL" "$DAILY" "$TEMP_DISPLAY"
             # Accumulate for summary
             TOTAL_KWH=$(echo "$TOTAL_KWH + $DAILY" | bc -l)
             VALID_DAYS=$((VALID_DAYS + 1))
+
+            # Accumulate temperature if available (check for non-zero or valid number)
+            if [[ "$AVG_TEMP" != "N/A" ]] && [[ "$AVG_TEMP" =~ ^-?[0-9]+\.?[0-9]*$ ]]; then
+                TOTAL_TEMP=$(echo "$TOTAL_TEMP + $AVG_TEMP" | bc -l)
+                VALID_TEMP_DAYS=$((VALID_TEMP_DAYS + 1))
+            fi
         fi
     else
+        # No energy data, but may have temperature
         if [ "$FORMAT" = "csv" ]; then
-            printf "%s,%s,%s,%s,NO_DATA\n" "$DATE" "$START_VAL" "$END_VAL" "N/A"
+            # Round temperature to 1 decimal place for CSV
+            if [[ "$AVG_TEMP" != "N/A" ]]; then
+                TEMP_CSV=$(printf "%.1f" "$AVG_TEMP")
+            else
+                TEMP_CSV="N/A"
+            fi
+            printf "%s,%s,%s,%s,%s,NO_DATA\n" "$DATE" "$START_VAL" "$END_VAL" "N/A" "$TEMP_CSV"
         else
-            printf "%s | %11s | %11s | %11s | no data\n" "$DATE" "$START_VAL" "$END_VAL" "N/A"
+            TEMP_DISPLAY="N/A"
+            if [[ "$AVG_TEMP" != "N/A" ]]; then
+                TEMP_DISPLAY=$(printf "%.1f°C" "$AVG_TEMP")
+            fi
+            printf "%s | %11s | %11s | %11s | %8s | no data\n" "$DATE" "$START_VAL" "$END_VAL" "N/A" "$TEMP_DISPLAY"
         fi
     fi
 done
 
 # Print summary for table format
 if [ "$FORMAT" != "csv" ] && [ $VALID_DAYS -gt 0 ]; then
-    AVERAGE=$(echo "scale=1; $TOTAL_KWH / $VALID_DAYS" | bc -l)
-    echo "-----------|-------------|-------------|-------------|--------"
-    printf "%-10s | %11s | %11s | %11.1f | Summary\n" "Total" "" "" "$TOTAL_KWH"
-    printf "%-10s | %11s | %11s | %11.1f | (%d days)\n" "Average" "" "" "$AVERAGE" "$VALID_DAYS"
+    AVERAGE_KWH=$(echo "scale=1; $TOTAL_KWH / $VALID_DAYS" | bc -l)
+
+    # Calculate average temperature if we have data
+    if [ $VALID_TEMP_DAYS -gt 0 ]; then
+        AVERAGE_TEMP=$(echo "scale=1; $TOTAL_TEMP / $VALID_TEMP_DAYS" | bc -l)
+        TEMP_SUMMARY=$(printf "%.1f°C" "$AVERAGE_TEMP")
+    else
+        TEMP_SUMMARY="N/A"
+    fi
+
+    echo "-----------|-------------|-------------|-------------|----------|--------"
+    printf "%-10s | %11s | %11s | %11.1f | %8s | Summary\n" "Total" "" "" "$TOTAL_KWH" ""
+    printf "%-10s | %11s | %11s | %11.1f | %8s | (%d days)\n" "Average" "" "" "$AVERAGE_KWH" "$TEMP_SUMMARY" "$VALID_DAYS"
 fi
