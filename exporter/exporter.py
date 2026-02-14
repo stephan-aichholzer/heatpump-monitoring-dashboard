@@ -21,6 +21,9 @@ power_l3_kw = Gauge("wago_power_L3_kw", "L3 active power (kW)")
 frequency_hz = Gauge("wago_frequency_hz", "Grid frequency (Hz)")
 power_factor = Gauge("wago_power_factor", "Power factor (Cos φ)")
 
+modbus_up = Gauge("modbus_connection_up", "Modbus connection status (1=connected, 0=disconnected)")
+modbus_failures = Gauge("modbus_consecutive_failures", "Number of consecutive poll cycles with all reads failed")
+
 # Track last valid energy values to ensure monotonic increasing
 last_energy = {"total": 0.0, "l1": 0.0, "l2": 0.0, "l3": 0.0}
 
@@ -46,6 +49,11 @@ MODBUS_IP = "192.168.2.10"
 MODBUS_PORT = 8899
 SLAVE_ID = 2
 POLL_INTERVAL_SECONDS = 30
+MAX_CONSECUTIVE_FAILURES = 5  # Trigger reconnect after 5 failed cycles (~2.5 min)
+MAX_RECONNECT_DELAY = 300  # Max backoff delay: 5 minutes
+
+# Connection health tracking
+consecutive_failures = 0
 
 async def read_float32(client, address):
     try:
@@ -111,19 +119,28 @@ def validate_power_value(value, metric_name, last_valid_value=None):
         return (last_valid_value, False)
 
 async def poll_loop():
-    """Main polling loop with connection resilience"""
+    """Main polling loop with connection resilience and exponential backoff"""
+    global consecutive_failures
+    reconnect_delay = POLL_INTERVAL_SECONDS
     while True:
         try:
             async with AsyncModbusTcpClient(MODBUS_IP, port=MODBUS_PORT) as client:
                 logging.info(f"Connected to Modbus gateway at {MODBUS_IP}:{MODBUS_PORT}")
+                modbus_up.set(1)
+                consecutive_failures = 0
+                modbus_failures.set(0)
+                reconnect_delay = POLL_INTERVAL_SECONDS  # Reset backoff on success
                 await poll_iteration(client)
         except Exception as e:
-            logging.error(f"Connection lost or error in poll loop: {e}")
-            logging.info(f"Reconnecting in {POLL_INTERVAL_SECONDS} seconds...")
-            await asyncio.sleep(POLL_INTERVAL_SECONDS)
+            modbus_up.set(0)
+            logging.error(f"Connection lost: {e}")
+            logging.info(f"Reconnecting in {reconnect_delay} seconds...")
+            await asyncio.sleep(reconnect_delay)
+            reconnect_delay = min(reconnect_delay * 2, MAX_RECONNECT_DELAY)
 
 async def poll_iteration(client):
     """Single polling iteration - separated for better error handling"""
+    global consecutive_failures
     while True:
         power = await read_float32(client, 0x5012)
         energy = await read_float32(client, 0x6000)
@@ -138,6 +155,26 @@ async def poll_iteration(client):
 
         frequency = await read_float32(client, 0x5008)
         pf = await read_float32(client, 0x502A)
+
+        # Health check: detect dead connection (all reads returned None)
+        all_readings = [power, energy, energy_l1, energy_l2, energy_l3,
+                        power_l1, power_l2, power_l3, frequency, pf]
+        if all(r is None for r in all_readings):
+            consecutive_failures += 1
+            modbus_failures.set(consecutive_failures)
+            modbus_up.set(0)
+            if consecutive_failures >= MAX_CONSECUTIVE_FAILURES:
+                raise ConnectionError(
+                    f"All registers returned None for {consecutive_failures} consecutive cycles - forcing reconnect")
+            logging.warning(f"All reads failed ({consecutive_failures}/{MAX_CONSECUTIVE_FAILURES} before reconnect)")
+            await asyncio.sleep(POLL_INTERVAL_SECONDS)
+            continue
+        else:
+            if consecutive_failures > 0:
+                logging.info(f"Connection recovered after {consecutive_failures} failed cycles")
+            consecutive_failures = 0
+            modbus_failures.set(0)
+            modbus_up.set(1)
 
         # Power metrics - filter out garbage/spike values below 1W
         # Use smart validation to ignore single anomalous low readings but accept consecutive low values
