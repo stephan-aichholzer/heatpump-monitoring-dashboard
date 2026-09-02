@@ -127,7 +127,7 @@ for i in $(seq 0 $DAYS); do
     # Detect stove usage: indoor max > 23°C AND outdoor avg < 10°C (checked only 6 AM - midnight)
     STOVE_MARKER=""
     if [[ "$MAX_INDOOR" != "N/A" && "$AVG_TEMP" != "N/A" ]]; then
-        if (( $(echo "$MAX_INDOOR > 22" | bc -l) )) && (( $(echo "$AVG_TEMP < 10" | bc -l) )); then
+        if (( $(echo "$MAX_INDOOR > 22.5" | bc -l) )) && (( $(echo "$AVG_TEMP < 10" | bc -l) )); then
             STOVE_MARKER="x"
         fi
     fi
