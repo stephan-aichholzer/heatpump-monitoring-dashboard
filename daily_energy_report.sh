@@ -64,8 +64,12 @@ if ! date -d "$END_DATE" >/dev/null 2>&1; then
 fi
 
 # Calculate number of days
-START_TS=$(date -d "$START_DATE" +%s)
-END_TS=$(date -d "$END_DATE" +%s)
+# Count days in UTC. Parsing these as local time makes the span a non-multiple
+# of 86400 whenever a DST change falls between the two dates (the spring switch
+# shortens it by an hour), and the integer division then drops the final day.
+# The per-day loop below still uses local-time date arithmetic, which is correct.
+START_TS=$(date -u -d "$START_DATE 00:00:00 UTC" +%s)
+END_TS=$(date -u -d "$END_DATE 00:00:00 UTC" +%s)
 DAYS=$(( (END_TS - START_TS) / 86400 ))
 
 if [ $DAYS -lt 0 ]; then
@@ -124,33 +128,41 @@ for i in $(seq 0 $DAYS); do
     TIME_RANGE=$((MIDNIGHT_END - SIX_AM))
     MAX_INDOOR=$(curl -s "http://localhost:9090/api/v1/query?query=max_over_time(sensor_temperature_celsius%7Bsensor_name%3D%22temp_indoor%22%7D%5B${TIME_RANGE}s%5D)&time=${MIDNIGHT_END}" | jq -r '.data.result[0].value[1] // "N/A"')
 
-    # Detect stove usage: indoor max > 23°C AND outdoor avg < 10°C (checked only 6 AM - midnight)
+    # Detect stove usage: indoor max > 22.5°C AND outdoor avg < 10°C (checked only 6 AM - midnight)
     STOVE_MARKER=""
     if [[ "$MAX_INDOOR" != "N/A" && "$AVG_TEMP" != "N/A" ]]; then
-        if (( $(echo "$MAX_INDOOR > 22.5" | bc -l) )) && (( $(echo "$AVG_TEMP < 10" | bc -l) )); then
+        if awk -v i="$MAX_INDOOR" -v o="$AVG_TEMP" 'BEGIN{exit !(i > 22.5 && o < 10)}'; then
             STOVE_MARKER="x"
         fi
     fi
 
-    # Count defrost cycles (power spikes > 8kW) - only if requested
+    # Count defrost cycles - only if requested.
+    # Detected by the physical signature, not a power threshold: during a defrost
+    # the reversing valve turns the outdoor coil into the condenser, so heat is
+    # drawn OUT of the water and flow falls below return. The compressor term
+    # excludes idle spells, where flow also sits below return but nothing runs.
+    # Samples less than 5 min apart are one episode.
+    # This replaced a "power > 8kW" rising-edge test, which only caught defrosts
+    # that the backup heater assisted and missed every mild-weather one (those
+    # peak near 4kW) - it scored 0 on days with 3-4 real defrost cycles.
     DEFROST_COUNT=""
     if [ "$INCLUDE_DEFROST" = true ]; then
-        DEFROST_COUNT=$(curl -s "http://localhost:9090/api/v1/query_range?query=wago_power_total_kw&start=${MIDNIGHT_START}&end=${MIDNIGHT_END}&step=30" | jq '
-          .data.result[0].values
-          | to_entries
-          | reduce .[] as $curr (
-              {prev: 0, count: 0};
-              if ($curr.value[1] | tonumber) > 8 and .prev <= 8
-              then {prev: ($curr.value[1] | tonumber), count: (.count + 1)}
-              else {prev: ($curr.value[1] | tonumber), count: .count}
-              end
-            )
-          | .count // 0')
+        DEFROST_COUNT=$(curl -s -G "http://localhost:9090/api/v1/query_range" \
+            --data-urlencode 'query=(heatpump_flow_temperature_celsius < heatpump_return_temperature_celsius) and on() (wago_power_total_kw > 3)' \
+            --data-urlencode "start=${MIDNIGHT_START}" \
+            --data-urlencode "end=${MIDNIGHT_END}" \
+            --data-urlencode 'step=30' | jq '
+          [.data.result[0].values[]? | .[0]] as $ts
+          | if ($ts | length) == 0 then 0
+            else reduce range(0; $ts | length) as $i (
+                   0;
+                   if $i == 0 or ($ts[$i] - $ts[$i-1]) > 300 then . + 1 else . end)
+            end')
     fi
 
     # Calculate daily consumption
     if [[ "$START_VAL" != "N/A" && "$END_VAL" != "N/A" ]]; then
-        DAILY=$(echo "$END_VAL - $START_VAL" | bc -l)
+        DAILY=$(awk -v e="$END_VAL" -v s="$START_VAL" 'BEGIN{printf "%.3f", e - s}')
 
         # Format temperature displays
         if [[ "$AVG_TEMP" != "N/A" ]]; then
@@ -177,12 +189,12 @@ for i in $(seq 0 $DAYS); do
                 printf "%s | %11.1f | %11.1f | %11.1f | %6s | %7s | %5s | OK\n" "$DATE" "$START_VAL" "$END_VAL" "$DAILY" "$TEMP_DISPLAY" "$FLOW_DISPLAY" "$STOVE_MARKER"
             fi
             # Accumulate for summary
-            TOTAL_KWH=$(echo "$TOTAL_KWH + $DAILY" | bc -l)
+            TOTAL_KWH=$(awk -v t="$TOTAL_KWH" -v d="$DAILY" 'BEGIN{printf "%.3f", t + d}')
             VALID_DAYS=$((VALID_DAYS + 1))
 
             # Accumulate temperature if available (check for non-zero or valid number)
             if [[ "$AVG_TEMP" != "N/A" ]] && [[ "$AVG_TEMP" =~ ^-?[0-9]+\.?[0-9]*$ ]]; then
-                TOTAL_TEMP=$(echo "$TOTAL_TEMP + $AVG_TEMP" | bc -l)
+                TOTAL_TEMP=$(awk -v t="$TOTAL_TEMP" -v a="$AVG_TEMP" 'BEGIN{printf "%.3f", t + a}')
                 VALID_TEMP_DAYS=$((VALID_TEMP_DAYS + 1))
             fi
         fi
@@ -214,11 +226,11 @@ done
 
 # Print summary for table format
 if [ "$FORMAT" != "csv" ] && [ $VALID_DAYS -gt 0 ]; then
-    AVERAGE_KWH=$(echo "scale=1; $TOTAL_KWH / $VALID_DAYS" | bc -l)
+    AVERAGE_KWH=$(awk -v t="$TOTAL_KWH" -v n="$VALID_DAYS" 'BEGIN{printf "%.1f", t / n}')
 
     # Calculate average temperature if we have data
     if [ $VALID_TEMP_DAYS -gt 0 ]; then
-        AVERAGE_TEMP=$(echo "scale=1; $TOTAL_TEMP / $VALID_TEMP_DAYS" | bc -l)
+        AVERAGE_TEMP=$(awk -v t="$TOTAL_TEMP" -v n="$VALID_TEMP_DAYS" 'BEGIN{printf "%.1f", t / n}')
         TEMP_SUMMARY=$(printf "%.1f°C" "$AVERAGE_TEMP")
     else
         TEMP_SUMMARY="N/A"
