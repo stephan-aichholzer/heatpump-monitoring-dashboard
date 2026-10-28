@@ -124,7 +124,7 @@ echo -e "${GREEN}[2/4] Backing up Docker volumes...${NC}"
 cd "$SCRIPT_DIR"
 
 # Check if containers are running
-if ! docker-compose ps | grep -q "Up"; then
+if ! docker compose ps | grep -q "Up"; then
     echo -e "  ${YELLOW}Warning: Some containers are not running${NC}"
 fi
 
